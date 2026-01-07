@@ -1,0 +1,213 @@
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { App } from './App';
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+{
+  "name": "Vehicle AI Monitor",
+  "description": "Real-time vehicle telemetry dashboard powered by Google Gemini AI for intelligent safety and efficiency analysis.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vehicle AI Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <style>
+      /* Custom scrollbar for a sleeker dashboard look - Light Theme */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "react-leaflet": "https://esm.sh/react-leaflet@^5.0.0",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-50 text-gray-900 antialiased overflow-hidden">
+    <div id="root"></div>
+    <script type="module" src="index.tsx"></script>
+  </body>
+</html>
+export interface VehicleData {
+  speed: number; // km/h
+  rpm: number;
+  fuel: number; // percentage
+  engineTemp: number; // celsius
+  lat: number;
+  lng: number;
+  timestamp: number;
+}
+
+export const VehicleStatus = {
+  NORMAL: 'NORMAL',
+  WARNING: 'WARNING',
+  CRITICAL: 'CRITICAL'
+} as const;
+
+export type VehicleStatus = typeof VehicleStatus[keyof typeof VehicleStatus];
+
+export interface AIAnalysisResult {
+  status: VehicleStatus;
+  summary: string;
+  recommendation: string;
+  efficiencyScore: number;
+  estimatedRange: number;
+}
+
+export interface AnalysisLogEntry extends AIAnalysisResult {
+  timestamp: number;
+}
+import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { VehicleData, AIAnalysisResult, VehicleStatus } from "../types";
+
+// Define the schema for the AI response
+const analysisSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    status: {
+      type: Type.STRING,
+      enum: [VehicleStatus.NORMAL, VehicleStatus.WARNING, VehicleStatus.CRITICAL],
+      description: "Overall vehicle health status based on telemetry.",
+    },
+    summary: {
+      type: Type.STRING,
+      description: "A concise summary of the current vehicle state (max 15 words).",
+    },
+    recommendation: {
+      type: Type.STRING,
+      description: "Actionable advice for the driver regarding safety or maintenance.",
+    },
+    efficiencyScore: {
+      type: Type.INTEGER,
+      description: "A score from 0 to 100 indicating driving efficiency.",
+    },
+    estimatedRange: {
+      type: Type.INTEGER,
+      description: "Estimated remaining range in km based on fuel and efficiency.",
+    },
+  },
+  required: ["status", "summary", "recommendation", "efficiencyScore", "estimatedRange"],
+};
+
+export const analyzeTelemetry = async (data: VehicleData): Promise<AIAnalysisResult> => {
+  try {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("API Key not found");
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+
+    // Use gemini-3-flash-preview for fast, structured JSON responses
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: Analyze this vehicle telemetry data snapshot:
+      Speed: ${data.speed} km/h
+      RPM: ${data.rpm}
+      Fuel Level: ${data.fuel}%
+      Engine Temp: ${data.engineTemp}°C
+      
+      Provide a safety and efficiency assessment.,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: analysisSchema,
+        systemInstruction: "You are an advanced onboard vehicle AI. Your job is to monitor real-time telemetry and ensure driver safety and vehicle longevity. Be concise and technical but accessible.",
+      },
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("No response from AI");
+
+    const result = JSON.parse(text) as AIAnalysisResult;
+    return result;
+
+  } catch (error) {
+    console.error("AI Analysis failed:", error);
+    // Fallback in case of API error to prevent app crash
+    return {
+      status: VehicleStatus.WARNING,
+      summary: "AI Connection Offline",
+      recommendation: "Proceed with caution. AI monitoring is temporarily unavailable.",
+      efficiencyScore: 0,
+      estimatedRange: 0,
+    };
+  }
+};
+import React from 'react';
+import { Activity, Gauge, Fuel, Thermometer } from 'lucide-react';
+
+interface StatCardProps {
+  label: string;
+  value: string | number;
+  unit: string;
+  type: 'speed' | 'rpm' | 'fuel' | 'temp';
+  warning?: boolean;
+}
+
+export const StatCard: React.FC<StatCardProps> = ({ label, value, unit, type, warning }) => {
+  const getIcon = () => {
+    switch (type) {
+      case 'speed': return <Gauge className="w-6 h-6 text-cyan-600" />;
+      case 'rpm': return <Activity className="w-6 h-6 text-violet-600" />;
+      case 'fuel': return <Fuel className="w-6 h-6 text-emerald-600" />;
+      case 'temp': return <Thermometer className="w-6 h-6 text-orange-600" />;
+    }
+  };
+
+  return (
+    <div className={relative overflow-hidden bg-white rounded-xl p-5 border shadow-sm transition-all ${warning ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]' : 'border-gray-200'}}>
+      <div className="flex justify-between items-start mb-2">
+        <span className="text-gray-500 text-sm font-medium uppercase tracking-wider">{label}</span>
+        {getIcon()}
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className={text-3xl font-bold ${warning ? 'text-red-600' : 'text-gray-900'}}>
+          {value}
+        </span>
+        <span className="text-gray-400 font-medium">{unit}</span>
+      </div>
+      
+      {/* Background decoration */}
+      <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-gradient-to-br from-gray-100 to-transparent rounded-full blur-2xl pointer-events-none" />
+    </div>
+  );
+};       
